@@ -4,6 +4,9 @@
 This repository contains an R Markdown document detailing an extensive analysis of differentially expressed genes (DEGs) in individuals with Autism Spectrum Disorder (ASD) 
 compared to controls. The analysis is based on data from the GEO database (GSE28521) and involves various bioinformatics techniques and statistical methods.
 
+## Results
+[View the Knitted HTML](https://htmlpreview.github.io/?https://github.com/stratashake/R-Transcriptomics-Pipeline-ASD/blob/main/docs/Output.html)
+
 ## Data Source
 The data used in this analysis is sourced from the GEO database, specifically from [GSE28521](https://www.ncbi.nlm.nih.gov/geo/geo2r/?acc=GSE28521). 
 This dataset includes gene expression profiles from individuals with ASD and control subjects.
@@ -62,9 +65,6 @@ BiocManager::install(c("GEOquery", "limma", "AnnotationDbi", "illuminaHumanv4.db
 ## Running the Analysis
 The R Markdown document is structured to be run in sections, each corresponding to a different phase of the analysis. 
 You can run each code chunk individually or run the entire document to perform the full analysis.
-
-## Results
-
 
 ## License
 This project is licensed under the MIT License
