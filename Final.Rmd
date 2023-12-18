@@ -1,0 +1,395 @@
+---
+title: "Analysis of DEGs of those with ASD vs Controls"
+author: "Matthew Dyer"
+date: "2023-12-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Gather Data
+
+The following chunk of code comes from the original author's work and is 
+found at: https://www.ncbi.nlm.nih.gov/geo/geo2r/?acc=GSE28521
+```{r}
+#   Data plots for selected GEO samples
+library(GEOquery)
+library(limma)
+library(umap)
+
+# load series and platform data from GEO
+
+gset <- getGEO("GSE28521", GSEMatrix =TRUE, getGPL=FALSE)
+if (length(gset) > 1) idx <- grep("GPL6883", attr(gset, "names")) else idx <- 1
+gset <- gset[[idx]]
+
+ex <- exprs(gset)
+# log2 transform
+qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+LogC <- (qx[5] > 100) ||
+          (qx[6]-qx[1] > 50 && qx[2] > 0)
+if (LogC) { ex[which(ex <= 0)] <- NaN
+  ex <- log2(ex) }
+
+# box-and-whisker plot
+dev.new(width=3+ncol(gset)/6, height=5)
+par(mar=c(7,4,2,1))
+title <- paste ("GSE28521", "/", annotation(gset), sep ="")
+boxplot(ex, boxwex=0.7, notch=T, main=title, outline=FALSE, las=2)
+dev.off()
+
+# expression value distribution plot
+par(mar=c(4,4,2,1))
+title <- paste ("GSE28521", "/", annotation(gset), " value distribution", sep ="")
+plotDensities(ex, main=title, legend=F)
+
+# mean-variance trend
+ex <- na.omit(ex) # eliminate rows with NAs
+plotSA(lmFit(ex), main="Mean variance trend, GSE28521")
+
+# UMAP plot (multi-dimensional scaling)
+ex <- ex[!duplicated(ex), ]  # remove duplicates
+ump <- umap(t(ex), n_neighbors = 15, random_state = 123)
+plot(ump$layout, main="UMAP plot, nbrs=15", xlab="", ylab="", pch=20, cex=1.5)
+library("maptools")  # point labels without overlaps
+pointLabel(ump$layout, labels = rownames(ump$layout), method="SANN", cex=0.6)
+```
+
+# Filter Data for only cortex tissue and establish factors for ASD and controls
+
+```{r}
+# Extract disease status information
+disease_status <- gset$characteristics_ch1
+
+# Create a logical vector (TRUE for autism, FALSE for control)
+is_autism <- grepl("autism", disease_status, ignore.case = TRUE)
+
+# Convert logical vector to numeric (1 for autism, 0 for control)
+autism_numeric <- as.numeric(is_autism)
+
+# Create a logical vector indicating whether each sample is from the cerebellum
+is_cerebellum <- grepl("Cerebellum", gset$characteristics_ch1.1)
+
+# Create a new vector excluding cerebellum samples
+autism_numeric_filtered <- autism_numeric[!is_cerebellum]
+
+# Subset the expression data to exclude cerebellum samples
+data <- ex[, !is_cerebellum]
+```
+
+# Run SAMr
+
+```{r, results='hide'}
+library(samr)
+
+#Split the data into autism and control groups
+data.asd <- data[, autism_numeric_filtered == 1]
+data.ctl <- data[, autism_numeric_filtered == 0]
+
+# Combine the data
+data.asd <- as.matrix(data.asd)
+data.ctl <- as.matrix(data.ctl)
+combined_data <- cbind(data.asd, data.ctl)
+
+# Create a group vector with character values
+group <- c(rep("ASD", ncol(data.asd)), rep("CTL", ncol(data.ctl)))
+
+# Convert the group vector to a factor
+group_factor <- as.factor(group)
+
+# Convert group_factor to numeric values (2 for ASD and 1 for CTL)
+y_numeric <- ifelse(group_factor == "CTL", 1, 2) # This makes ASD the point of comparison in regards to up and down regulation.
+
+# Prepare the data list for SAM
+sam.data <- list(
+  x = combined_data,
+  y = y_numeric,
+  geneid = as.character(1:nrow(combined_data)),
+  genenames = rownames(combined_data),
+  logged2 = TRUE
+)
+
+# Run SAM
+samr.obj <- samr(sam.data, resp.type="Two class unpaired", nperms=1000)
+
+# Higher values are more stringent
+# This delta value gives ~475 DEGs at a 0.0 "med false pos"   
+delta = 1.444126120
+
+delta.table <- samr.compute.delta.table(samr.obj) # Table used to find the optimal delta
+siggenes.table <- samr.compute.siggenes.table(samr.obj, delta, sam.data, delta.table)
+```
+
+```{r}
+up.genes <- siggenes.table$genes.up[,2] #121 genes
+down.genes <- siggenes.table$genes.lo[,2] #354 genes
+all.genes <- c(up.genes, down.genes) #475 genes total
+up.genes.data <- combined_data[up.genes,]
+down.genes.data <- combined_data[down.genes,]
+f.data <- combined_data[all.genes,] #filtered data
+```
+
+
+# Hierarchical clustering
+```{r}
+library(dendextend)
+
+# Calculate distance matrix
+dist.mat.samples <- dist(t(f.data), method = 'euclidean')
+
+# Perform hierarchical clustering
+hclust.samples <- hclust(dist.mat.samples, method = 'ward.D2')
+
+# Convert to dendrogram
+dend <- as.dendrogram(hclust.samples)
+
+# Define colors for each group
+colors <- c(rep("blue", 29), rep("red", ncol(f.data) - 29))
+
+# Apply the colors to the labels of the dendrogram
+# Ensure the order of labels in dendrogram matches the column order in f.data
+labels_colors <- setNames(colors, colnames(f.data))
+dend <- color_labels(dend, col = labels_colors[labels(dend)])
+
+# Plot the dendrogram
+par(mar = c(5, 4, 2, 7))  # Adjust margins to fit legend
+plot(dend, main = "Hierarchical Clustering of Samples")
+
+# Add a legend
+legend("topright", legend = c("ASD", "CTL"), fill = c("blue", "red"), cex = 0.8)
+```
+
+# Perform RF on the entire dataset and see what genes stand out. 
+
+```{r}
+library(randomForest)
+combined.data <- t(combined_data)  # Transpose the data so that genes are columns. combined_data is the entire dataset w/9k genes
+combined.data <- data.frame(group_factor, combined.data)
+
+set.seed(123)  # for reproducibility
+rf_model <- randomForest(group_factor ~ ., data = combined.data, ntree = 500, mtry = round(sqrt(ncol(combined.data)))) 
+```
+
+```{r}
+rf_model #with this many genes (all 9163 genes), our Random Forest is only ~81.03% accurate
+importance <- importance(rf_model)
+top_genes <- head(importance[order(importance, decreasing = TRUE), ], 500)
+
+rf.opt.data <- combined_data[names(top_genes), ] #subset with only the top 500 most important genes, reduce noise
+combined.data.opt <- t(rf.opt.data)  # Transpose the data so that genes are columns
+combined.data.opt <- data.frame(group_factor, combined.data.opt)
+
+set.seed(123)  # for reproducibility
+rf_model_opt <- randomForest(group_factor ~ ., data = combined.data.opt, ntree = 500, mtry = round(sqrt(ncol(combined_data)))) 
+rf_model_opt #Increase to 86.21% accuracy with the top 500 genes that are relevant to the original RF. 
+```
+
+We can get even more accurate RF models, but I want to keep a larger gene pool for pathway analysis. 
+
+```{r}
+rf.names <- names(top_genes)
+length(rf.names[!rf.names %in% down.genes]) #157/500 RF most important genes in the SAMr down regulated genes
+length(rf.names[!rf.names %in% up.genes]) #56/500 RF most important genes in the SAMr up regulated genes
+
+rf.sam.down <- rf.names[rf.names %in% down.genes]
+rf.sam.up <- rf.names[rf.names %in% up.genes]
+rf.sam.all <- c(rf.sam.down, rf.sam.up) #213 genes for pathway analysis
+```
+
+# Gene name conversions
+
+```{r}
+library(AnnotationDbi)
+library(illuminaHumanv4.db)
+
+gene.symbols.up <- select(illuminaHumanv4.db, 
+                       keys = rf.sam.up, 
+                       columns = c("SYMBOL"), 
+                       keytype = "PROBEID")
+
+gene.symbols.down <- select(illuminaHumanv4.db, 
+                       keys = rf.sam.down, 
+                       columns = c("SYMBOL"), 
+                       keytype = "PROBEID")
+
+score.up.genes <- data.frame(PROBEID = siggenes.table$genes.up[, "Gene ID"], 
+                         Score_d = siggenes.table$genes.up[, "Score(d)"])
+
+score.down.genes <- data.frame(PROBEID = siggenes.table$genes.lo[, "Gene ID"], 
+                         Score_d = siggenes.table$genes.lo[, "Score(d)"])
+
+gene.symbols.up <- merge(gene.symbols.up, score.up.genes, by = "PROBEID") 
+gene.symbols.down <- merge(gene.symbols.down, score.down.genes, by = "PROBEID") 
+
+combined.score.genes <- rbind(gene.symbols.up, gene.symbols.down)
+```
+# GSEA
+
+```{r}
+library(fgsea)
+library(msigdbr)
+
+# Function to perform fgsea for different MSigDB categories and subcategories
+run_fgsea_for_categories <- function(gene_list) {
+  # Define the categories and subcategories
+  categories <- c("H", "C2", "C5")
+  subcategories <- c("", "CP:KEGG", "CP:REACTOME", "GO:BP", "GO:CC", "GO:MF")
+
+  # Initialize a list to store results
+  fgsea_results <- list()
+
+  # Iterate over categories and subcategories
+  for (cat in categories) {
+    for (subcat in subcategories) {
+      # Construct the category string
+      category_str <- ifelse(subcat == "", cat, paste(cat, subcat, sep = ":"))
+
+      # Get MSigDB gene sets
+      pathways <- tryCatch({
+        msigdbr(species = "Homo sapiens", category = cat, subcategory = subcat)
+      }, error = function(e) return(NULL))
+
+      # Skip if the category/subcategory combination is not valid
+      if (is.null(pathways)) next
+
+      # Split gene sets
+      gene_sets <- split(pathways$gene_symbol, pathways$gs_name)
+
+      # Run fgsea
+      fgsea_result <- fgsea(pathways = gene_sets, 
+                            stats = gene_list, 
+                            minSize = 5,   # Minimum size of gene set to consider
+                            maxSize = 500)
+
+      # Store results
+      fgsea_results[[category_str]] <- fgsea_result
+    }
+  }
+
+  return(fgsea_results)
+}
+
+# Create a named vector
+gene.list <- setNames(as.numeric(combined.score.genes$Score_d), combined.score.genes$SYMBOL)
+
+# Run the function
+fgsea_all_results <- run_fgsea_for_categories(gene.list)
+
+# Filter and save results
+filtered_results <- lapply(fgsea_all_results, function(x) x[x$padj < 0.05, ])
+```
+
+# WGCNA
+
+```{r}
+library(WGCNA)
+
+# Filter genes based on differential expression calculated from prior SAMr analysis and those identified by the optimized RF model. 
+wgcna.ids <- combined.score.genes$PROBEID
+wgcna.f.data <- f.data[rownames(f.data) %in% wgcna.ids, ]
+
+dataExpr <- t(wgcna.f.data)
+
+net = blockwiseModules(dataExpr, power = 7,
+                        TOMType = "signed", minModuleSize = 10,
+                        reassignThreshold =10, mergeCutHeight = 0.10,
+                        numericLabels = TRUE, pamRespectsDendro = FALSE,
+                        saveTOMs = TRUE,
+                        saveTOMFileBase="TOM", verbose=3, ds=3)
+
+
+
+```
+
+# Look at modules
+
+```{r}
+mergedColors = labels2colors(net$colors)
+plotDendroAndColors(net$dendrograms[[1]], mergedColors[net$blockGenes[[1]]],
+"Module colors",
+dendroLabels = FALSE, hang = 0.03,
+addGuide = TRUE, guideHang = 0.05)
+genes=colnames(dataExpr)
+moduleColors=labels2colors(net$colors)
+mymodules=cbind(genes,moduleColors)
+```
+
+```{r}
+# Define the phenotype
+# 1 for ASD individuals, 0 for controls, 
+phenotype = c(rep(1, 29), rep(0, 29))
+
+# Calculate Module Eigengenes
+MEs0 = moduleEigengenes(dataExpr, moduleColors)$eigengenes
+MEs = orderMEs(MEs0)
+
+# Correlate Module Eigengenes with Phenotype
+moduleTraitCor = cor(MEs, phenotype, use = "p")
+
+# Degrees of freedom = number of samples - 2
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, 22)
+```
+
+# Now let's visualize which modules are most significantly correlated with ASD
+
+```{r}
+# Convert p-values to -log10 scale for better visualization
+negLogPvalues = -log10(moduleTraitPvalue)
+moduleColorsVec = as.vector(rownames(moduleTraitCor))
+moduleColorsVec = gsub("ME", "", moduleColorsVec)
+
+# Plot the data
+plot(moduleTraitCor, negLogPvalues, xlab = "Module-Trait Correlation", ylab = "-log10(p-value)", 
+     main = "Module-Trait Correlation vs. P-value", pch = 19, col = moduleColorsVec)
+
+# Add text labels for module names
+text(moduleTraitCor, negLogPvalues, labels = names(moduleTraitCor), cex = 0.7, pos = 3)
+
+# Add color labels next to each dot
+offset = 0.1
+for (i in 1:length(moduleTraitCor)) {
+    text(moduleTraitCor[i], negLogPvalues[i] + offset, labels = moduleColorsVec[i], cex = 0.7, col = moduleColorsVec[i])
+}
+
+abline(h = -log10(0.05), col = "red", lty = 2)
+```
+
+# Export Network to Cytoscape
+
+```{r}
+load("C:/Users/Matt/Desktop/RBIF 114/Final/TOM-block.1.RData")
+
+exportNetworkToCytoscape(
+    adjMat = TOM,
+    edgeFile = "C:/Users/Matt/Desktop/RBIF 114/Final/edgeFile.txt",
+    nodeFile = "C:/Users/Matt/Desktop/RBIF 114/Final/nodeFile.txt",
+    weighted = TRUE,
+    threshold = 0.21, #have to use very low threshold to have enough genes for network analysis
+    nodeNames = mymodules[,1],
+    nodeAttr = mymodules[,2]
+)
+```
+
+# Name conversions for later use
+
+```{r}
+finalnames <- rownames(f.data)
+
+finalnames.final <- select(illuminaHumanv4.db, 
+                       keys = finalnames, 
+                       columns = c("SYMBOL"), 
+                       keytype = "PROBEID")
+
+# List of PROBEIDs for which you want to find Score(d)
+probe_ids <- c("ILMN_1754727", "ILMN_1685496", "ILMN_1673704", "ILMN_1772627")
+
+# Filter siggenes.table$genes.up to find matching PROBEIDs and extract Score(d)
+score_d_values <- siggenes.table$genes.lo[siggenes.table$genes.lo[, "Gene ID"] %in% probe_ids, c("Gene ID", "Score(d)")]
+colnames(score_d_values)[colnames(score_d_values) == "Gene ID"] <- "PROBEID"
+
+final.results <- merge(score_d_values, finalnames.final, by = "PROBEID")
+final.results
+```
+
