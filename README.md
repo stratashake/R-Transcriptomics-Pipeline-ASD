@@ -6,6 +6,7 @@ compared to controls. The analysis is based on data from the GEO database (GSE28
 
 ## Results
 [View the Knitted HTML file](https://htmlpreview.github.io/?https://github.com/stratashake/R-Transcriptomics-Pipeline-ASD/blob/main/docs/Output.html)
+Specific data, such as GSEA results, Cytoscape's analysis of enriched pathways, and Cytoscape's representation of the WGCNA network can be found in the 'docs' folder.
 
 ## Data Source
 The data used in this analysis is sourced from the GEO database, specifically from [GSE28521](https://www.ncbi.nlm.nih.gov/geo/geo2r/?acc=GSE28521). 
