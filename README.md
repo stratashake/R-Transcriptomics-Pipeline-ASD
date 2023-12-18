@@ -5,7 +5,7 @@ This repository contains an R Markdown document detailing an extensive analysis 
 compared to controls. The analysis is based on data from the GEO database (GSE28521) and involves various bioinformatics techniques and statistical methods.
 
 ## Results
-[View the Knitted HTML](https://htmlpreview.github.io/?https://github.com/stratashake/R-Transcriptomics-Pipeline-ASD/blob/main/docs/Output.html)
+[View the Knitted HTML file](https://htmlpreview.github.io/?https://github.com/stratashake/R-Transcriptomics-Pipeline-ASD/blob/main/docs/Output.html)
 
 ## Data Source
 The data used in this analysis is sourced from the GEO database, specifically from [GSE28521](https://www.ncbi.nlm.nih.gov/geo/geo2r/?acc=GSE28521). 
