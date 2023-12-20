@@ -1,12 +1,13 @@
 # Analysis of DEGs in ASD vs Controls
 
 ## Overview
-This repository contains an R Markdown document detailing an extensive analysis of differentially expressed genes (DEGs) in individuals with Autism Spectrum Disorder (ASD) 
+This repository contains an R Markdown file and several supporting documents detailing an analysis of differentially expressed genes (DEGs) in individuals with Autism Spectrum Disorder (ASD) 
 compared to controls. The analysis is based on data from the GEO database (GSE28521) and involves various bioinformatics techniques and statistical methods.
 
 ## Results
 [View the Knitted HTML file](https://htmlpreview.github.io/?https://github.com/stratashake/R-Transcriptomics-Pipeline-ASD/blob/main/docs/Output.html)
 
+- **NGS1 is identified as a novel and potentially negatively correlated biomarker, or 'hub gene', of interest in ASD. It has not been identified as such in any published research.**
 - Specific data, such as GSEA results, Cytoscape's analysis of enriched pathways, and Cytoscape's representation of the WGCNA network can be found in the 'docs' folder.
 
 ## Data Source
@@ -20,6 +21,7 @@ This dataset includes gene expression profiles from individuals with ASD and con
 - **Gene Set Enrichment Analysis (GSEA)**: Conducting pathway analysis to understand the biological significance of DEGs.
 - **Weighted Gene Co-expression Network Analysis (WGCNA)**: Building gene co-expression networks to identify modules of correlated genes.
 - **Exporting Network Data**: Preparing data for visualization in network analysis tools like Cytoscape.
+- **Report on Results**: A comprehensive and high-level summary of my analysis and rationale for selecting NGS1 as an unidentified biomarker in ASD. 
 
 ## Installation and Setup
 
